@@ -96,18 +96,18 @@ func benchprefix(x interface{}) string {
 func Benchf(x interface{}, format string, v ...interface{}) {
 	s := fmt.Sprintf(benchprefix(x) + " " + format, v...)
 	benchfile.WriteString(s)
-	fmt.Printf("%s", s)
+	fmt.Printf(s)
 }
 
 func Benchln(x interface{}, v ...interface{}) {
 	if len(v) > 0 {
 		s := fmt.Sprintln(append([]interface{}{benchprefix(x)} , v...)...)
 		benchfile.WriteString(s)
-		fmt.Println(s)
+		fmt.Printf(s)
 	} else {
 		s := benchprefix(x)
 		benchfile.WriteString(s)
-		fmt.Println(s)
+		fmt.Printf(s)
 	}
 }
 
@@ -116,6 +116,14 @@ func Stringify(x interface{}) string {
 	if err == nil {
 		return fmt.Sprintf("%T: %s", x, marshaled)
 	}
-	return fmt.Sprintf("%T: %v:", x, x)
+	return fmt.Sprintf("%T: %v", x, x)
+}
+
+func StringifyIndent(x interface{}, indent string) string {
+	marshaled, err := json.MarshalIndent(x, "" ,indent)
+	if err == nil {
+		return fmt.Sprintf("%T: %s", x, marshaled)
+	}
+	return fmt.Sprintf("%T: %v", x, x)
 }
 
