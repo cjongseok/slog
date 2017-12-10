@@ -19,13 +19,49 @@ type LogPrefixed interface {
 var logging bool = true
 var benchfile *os.File = os.Stdout
 var benchclock = time.Now
+var datestr string
 
 func SetBenchOutput(f *os.File) {
 	benchfile = f
 }
 
+func nowDateString() string {
+	benchtime := time.Now()
+	y, mon, d := benchtime.Date()
+	h, min, s := benchtime.Clock()
+	return fmt.Sprintf("%02d%02d%02d-%02d%02d%02d", (y%100), mon, d, h, min, s)
+}
+
 func SetLogOutput(f *os.File) {
 	log.SetOutput(f)
+}
+
+func SetLogOutputAsFile(filename string) (*os.File, error) {
+	if datestr == "" {
+		datestr = nowDateString()
+	}
+	fullfilename := fmt.Sprintf("%s_%s.log", datestr, filename)
+	// Set logfile
+	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	if err != nil {
+		return nil, err
+	}
+	SetLogOutput(f)
+	return f, nil
+}
+
+func SetBenchOutputAsFile(filename string) (*os.File, error) {
+	if datestr == "" {
+		datestr = nowDateString()
+	}
+	fullfilename := fmt.Sprintf("%s_%s.bch", datestr, filename)
+	// Set logfile
+	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	if err != nil {
+		return nil, err
+	}
+	SetBenchOutput(f)
+	return f, nil
 }
 
 func SetBenchClock(clock now) {
