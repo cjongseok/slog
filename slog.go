@@ -100,6 +100,10 @@ func DisableLogging() {
 }
 
 func logprefix(x interface{}) string {
+	str, ok := x.(string)
+	if ok {
+		return str
+	}
 	switch x.(type) {
 	case LogPrefixed:
 		return x.(LogPrefixed).LogPrefix()
