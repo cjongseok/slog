@@ -360,3 +360,11 @@ func (dr *DumpRecorder) Close() {
     dst.Close()
   }
 }
+func (dr *DumpRecorder) DumpFile() (*os.File, bool) {
+	switch f := dr.dst.(type) {
+		case *os.File:
+			return f, true
+		default:
+			return nil, false
+	}
+}
