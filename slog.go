@@ -195,6 +195,7 @@ func StringifyIndent(x interface{}, indent string) string {
 
 func Record(bytes []byte) {
 	if bytesRecorder != nil {
+		log.Printf("Record bytes(len=%d)\n", len(bytes))
 		bytesRecorder.Record(bytes)
 	}
 }
