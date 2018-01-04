@@ -21,35 +21,43 @@ type LogPrefixed interface {
 }
 
 var logging bool = true
-var benchfile *os.File = os.Stdout
+var benchWriter io.Writer = os.Stdout
 var benchclock = time.Now
 var datestr string
 var bytesRecorder *DumpRecorder
 
-func SetBenchOutput(f *os.File) {
-	benchfile = f
+func SetBenchOutput(w io.Writer) {
+  benchWriter = w
 }
 
-func SetLogOutput(f *os.File) {
-	log.SetOutput(f)
+func SetLogOutput(w io.Writer) {
+	log.SetOutput(w)
 }
 
-func SetDumpRecorder(f *os.File) {
-	bytesRecorder = NewDumpRecorder(f)
+func SetDumpRecorder(w io.Writer) *DumpRecorder {
+	bytesRecorder = NewDumpRecorder(w)
+	return bytesRecorder
 }
 
-func nowDateString() string {
-	benchtime := time.Now()
-	y, mon, d := benchtime.Date()
-	h, min, s := benchtime.Clock()
-	return fmt.Sprintf("%02d%02d%02d-%02d%02d%02d", (y%100), mon, d, h, min, s)
+//func nowDateString() string {
+//	benchtime := time.Now()
+//	y, mon, d := benchtime.Date()
+//	h, min, s := benchtime.Clock()
+//	return fmt.Sprintf("%02d%02d%02d-%02d%02d%02d", (y%100), mon, d, h, min, s)
+//}
+
+func SlogCreationTimeInString() string {
+  if datestr == "" {
+    benchtime := time.Now()
+    y, mon, d := benchtime.Date()
+    h, min, s := benchtime.Clock()
+    datestr = fmt.Sprintf("%02d%02d%02d-%02d%02d%02d", (y%100), mon, d, h, min, s)
+  }
+  return datestr
 }
 
 func SetLogOutputAsFile(filename string) (*os.File, error) {
-	if datestr == "" {
-		datestr = nowDateString()
-	}
-	fullfilename := fmt.Sprintf("%s_%s.log", datestr, filename)
+	fullfilename := fmt.Sprintf("%s_%s.log", SlogCreationTimeInString(), filename)
 	// Set logfile
 	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
@@ -60,10 +68,7 @@ func SetLogOutputAsFile(filename string) (*os.File, error) {
 }
 
 func SetBenchOutputAsFile(filename string) (*os.File, error) {
-	if datestr == "" {
-		datestr = nowDateString()
-	}
-	fullfilename := fmt.Sprintf("%s_%s.bch", datestr, filename)
+	fullfilename := fmt.Sprintf("%s_%s.bch", SlogCreationTimeInString() , filename)
 	// Set logfile
 	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
@@ -74,10 +79,7 @@ func SetBenchOutputAsFile(filename string) (*os.File, error) {
 }
 
 func SetDumpRecorderAsFile(filename string) (*DumpRecorder, error) {
-	if datestr == "" {
-		datestr = nowDateString()
-	}
-	fullfilename := fmt.Sprintf("%s_%s.dump", datestr, filename)
+	fullfilename := fmt.Sprintf("%s_%s.dump", SlogCreationTimeInString(), filename)
 	// Set logfile
 	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
@@ -159,18 +161,18 @@ func benchprefix(x interface{}) string {
 
 func Benchf(x interface{}, format string, v ...interface{}) {
 	s := fmt.Sprintf(benchprefix(x) + " " + format, v...)
-	benchfile.WriteString(s)
+	benchWriter.Write([]byte(s))
 	fmt.Printf(s)
 }
 
 func Benchln(x interface{}, v ...interface{}) {
 	if len(v) > 0 {
 		s := fmt.Sprintln(append([]interface{}{benchprefix(x)} , v...)...)
-		benchfile.WriteString(s)
+    benchWriter.Write([]byte(s))
 		fmt.Printf(s)
 	} else {
 		s := benchprefix(x)
-		benchfile.WriteString(s)
+    benchWriter.Write([]byte(s))
 		fmt.Printf(s)
 	}
 }
@@ -305,24 +307,22 @@ func DumpChannel(src *os.File) (chan []byte, error) {
 }
 
 type DumpRecorder struct {
-	src 		chan []byte
-	dst 		*os.File
+	dst     io.Writer
 	seq 		int64
 	recording 	bool
 }
-func NewDumpRecorder(dst *os.File) *DumpRecorder {
+func NewDumpRecorder(w io.Writer) *DumpRecorder {
 	br := new(DumpRecorder)
-	br.src = make(chan []byte)
-	br.dst = dst
+	br.dst = w
 	br.seq = 0
 	br.recording = true
 	return br
 }
-func (br *DumpRecorder) Record(bytes []byte) {
-	if (br.recording) {
+func (dr *DumpRecorder) Record(bytes []byte) {
+	if (dr.recording) {
 		r := new(Dump)
 		r.timestamp = time.Now()
-		r.seq = br.seq
+		r.seq = dr.seq
 		r.bytes = bytes
 
 		// serialize
@@ -341,19 +341,21 @@ func (br *DumpRecorder) Record(bytes []byte) {
 		buf = append(buf, r.bytes...)				// bytes
 
 		// write to file
-		br.dst.Write(buf)
-		br.seq++
+		dr.dst.Write(buf)
+		dr.seq++
 	}
 }
-func (br *DumpRecorder) Enable() {
-	br.recording = true
+func (dr *DumpRecorder) Enable() {
+	dr.recording = true
 }
-func (br *DumpRecorder) Disable() {
-	br.recording = false
+func (dr *DumpRecorder) Disable() {
+	dr.recording = false
 
 }
-func (br *DumpRecorder) Close() {
-	br.Disable()
-	close(br.src)
-	br.dst.Close()
+func (dr *DumpRecorder) Close() {
+	dr.Disable()
+	switch dst := dr.dst.(type) {
+  case *os.File:
+    dst.Close()
+  }
 }
