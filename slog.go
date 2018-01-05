@@ -39,6 +39,15 @@ func SetDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecord
 	return bytesRecorder
 }
 
+func SetChunkingDumpRecorder(sizeLoggingInterval time.Duration, chunkFilename string, chunker DumpChunker) (*DumpRecorder, error) {
+  var err error
+  bytesRecorder, err = NewChunkingDumpRecorder(sizeLoggingInterval, chunkFilename, chunker)
+  if err != nil {
+    return nil, err
+  }
+  return bytesRecorder, nil
+}
+
 //func nowDateString() string {
 //	benchtime := time.Now()
 //	y, mon, d := benchtime.Date()
@@ -194,6 +203,7 @@ func StringifyIndent(x interface{}, indent string) string {
 }
 
 func Record(bytes []byte) {
+  Logf("[SLOG]", "bytesRecorder is %v\n", bytesRecorder)
 	if bytesRecorder != nil {
 		bytesRecorder.Record(bytes)
 	}
@@ -306,26 +316,46 @@ func DumpChannel(src *os.File) (chan []byte, error) {
 	return dst, nil
 }
 
+type DumpChunker struct {
+  UnitInKB  uint32
+  Callback  DumpChunkingCallback
+}
+type DumpChunkingCallback func(chunkFilename string)
+
 type DumpRecorder struct {
-	dst     io.Writer
-	seq 		int64
-	recording 	bool
-	size    uint64
+	dst             io.Writer
+	seq             int64
+	recording       bool
+  chunker         DumpChunker
+  chunking        bool
+	chunkNum        uint
+  chunkSize       uint64
+	chunkFilename   string
 	stopLoggingSize chan struct{}
 }
 func chunkedNumber(n uint64) string {
   str := fmt.Sprintf("%d", n)
   offset := len(str)%3
   chunked := str[0:offset]
-  for ; offset < len(str); offset = offset + 3{
+  for ; offset < len(str); offset = offset + 3 {
     chunked = chunked + "," + str[offset:offset+3]
   }
   return chunked
 }
+func NewChunkingDumpRecorder(sizeLoggingInterval time.Duration, chunkFilename string, chunker DumpChunker) (*DumpRecorder, error) {
+  f, err := os.OpenFile(chunkFilename + ".0", os.O_CREATE | os.O_WRONLY, 0666)
+  if err != nil {
+    return nil, fmt.Errorf("cannot open chunk file:", err)
+  }
+  dr := NewDumpRecorder(f, sizeLoggingInterval)
+  dr.chunking = true
+  dr.chunker = chunker
+  dr.chunkFilename = chunkFilename
+  return dr, nil
+}
 func NewDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecorder {
 	br := new(DumpRecorder)
 	br.dst = w
-	br.seq = 0
 	br.recording = true
 	br.stopLoggingSize = make(chan struct{})
 
@@ -338,10 +368,10 @@ func NewDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecord
       for {
         select {
         case <-br.stopLoggingSize:
-          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.size))
+          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.chunkSize))
           return
         case <-time.After(sizeLoggingInterval):
-          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.size))
+          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.chunkSize))
         }
       }
     }()
@@ -349,6 +379,7 @@ func NewDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecord
 	return br
 }
 func (dr *DumpRecorder) Record(bytes []byte) {
+  Logf("[SLOG]", "is recording? %v\n", dr.recording)
 	if (dr.recording) {
 		r := new(Dump)
 		r.timestamp = time.Now()
@@ -369,9 +400,26 @@ func (dr *DumpRecorder) Record(bytes []byte) {
 		encodeLong(int64(r.timestamp.UnixNano()))	// timestamp
 		encodeInt(int32(len(r.bytes)))				// bytes size
 		buf = append(buf, r.bytes...)				// bytes
-		dr.size += uint64(len(buf))
+		if dr.chunking {
+      appendedChunkSize :=  dr.chunkSize + uint64(len(buf))
+      if appendedChunkSize > uint64(dr.chunker.UnitInKB) * 1024 {
+        dr.dst.(*os.File).Close()
+        go dr.chunker.Callback(fmt.Sprintf("%s.%d", dr.chunkFilename, dr.chunkNum))
+        dr.chunkNum = dr.chunkNum + 1
+        newChunkFilename := fmt.Sprintf("%s.%d", dr.chunkFilename, dr.chunkNum)
+        newChunkfile, err := os.OpenFile(newChunkFilename, os.O_CREATE | os.O_WRONLY, 0666)
+        if err != nil {
+          Logf("Failed to open new chunkfile, %s: %s", newChunkFilename, err)
+          dr.Close()
+        }
+        dr.dst = newChunkfile
+        dr.chunkSize = 0
+      }
+    }
+    dr.chunkSize += uint64(len(buf))
 
 		// write to file
+		Logf("[SLOG]", "write bytes(size: %d) to dump(%v)\n", len(buf), dr.dst)
 		dr.dst.Write(buf)
 		dr.seq++
 	}
@@ -398,9 +446,6 @@ func (dr *DumpRecorder) DumpFile() (*os.File, bool) {
 		default:
 			return nil, false
 	}
-}
-func (dr *DumpRecorder) Size() uint64 {
-  return dr.size
 }
 func (dr *DumpRecorder) LogPrefixed() string {
   return "[DumpRecorder]"
