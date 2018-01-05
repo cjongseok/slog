@@ -311,6 +311,7 @@ type DumpRecorder struct {
 	dst     io.Writer
 	seq 		int64
 	recording 	bool
+	size    uint64
 }
 func NewDumpRecorder(w io.Writer) *DumpRecorder {
 	br := new(DumpRecorder)
@@ -340,6 +341,7 @@ func (dr *DumpRecorder) Record(bytes []byte) {
 		encodeLong(int64(r.timestamp.UnixNano()))	// timestamp
 		encodeInt(int32(len(r.bytes)))				// bytes size
 		buf = append(buf, r.bytes...)				// bytes
+		dr.size += uint64(len(buf))
 
 		// write to file
 		dr.dst.Write(buf)
@@ -367,4 +369,7 @@ func (dr *DumpRecorder) DumpFile() (*os.File, bool) {
 		default:
 			return nil, false
 	}
+}
+func (dr *DumpRecorder) Size() uint64 {
+  return dr.size
 }
