@@ -34,8 +34,8 @@ func SetLogOutput(w io.Writer) {
 	log.SetOutput(w)
 }
 
-func SetDumpRecorder(w io.Writer) *DumpRecorder {
-	bytesRecorder = NewDumpRecorder(w)
+func SetDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecorder {
+	bytesRecorder = NewDumpRecorder(w, sizeLoggingInterval)
 	return bytesRecorder
 }
 
@@ -78,14 +78,14 @@ func SetBenchOutputAsFile(filename string) (*os.File, error) {
 	return f, nil
 }
 
-func SetDumpRecorderAsFile(filename string) (*DumpRecorder, error) {
+func SetDumpRecorderAsFile(filename string, sizeLogginInterval time.Duration) (*DumpRecorder, error) {
 	fullfilename := fmt.Sprintf("%s_%s.dump", SlogCreationTimeInString(), filename)
 	// Set logfile
 	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
 	}
-	SetDumpRecorder(f)
+	SetDumpRecorder(f, sizeLogginInterval)
 	//return f, nil
 	return bytesRecorder, nil
 }
@@ -195,7 +195,6 @@ func StringifyIndent(x interface{}, indent string) string {
 
 func Record(bytes []byte) {
 	if bytesRecorder != nil {
-		log.Printf("Record bytes(len=%d)\n", len(bytes))
 		bytesRecorder.Record(bytes)
 	}
 }
@@ -312,12 +311,41 @@ type DumpRecorder struct {
 	seq 		int64
 	recording 	bool
 	size    uint64
+	stopLoggingSize chan struct{}
 }
-func NewDumpRecorder(w io.Writer) *DumpRecorder {
+func chunkedNumber(n uint64) string {
+  str := fmt.Sprintf("%d", n)
+  offset := len(str)%3
+  chunked := str[0:offset]
+  for ; offset < len(str); offset = offset + 3{
+    chunked = chunked + "," + str[offset:offset+3]
+  }
+  return chunked
+}
+func NewDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecorder {
 	br := new(DumpRecorder)
 	br.dst = w
 	br.seq = 0
 	br.recording = true
+	br.stopLoggingSize = make(chan struct{})
+
+	if sizeLoggingInterval != 0 {
+    go func() {
+      sizeLogPrefix := ""
+      if f, ok := br.dst.(*os.File); ok {
+        sizeLogPrefix = "Dump file, " + f.Name() + ", "
+      }
+      for {
+        select {
+        case <-br.stopLoggingSize:
+          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.size))
+          return
+        case <-time.After(sizeLoggingInterval):
+          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.size))
+        }
+      }
+    }()
+  }
 	return br
 }
 func (dr *DumpRecorder) Record(bytes []byte) {
@@ -357,6 +385,7 @@ func (dr *DumpRecorder) Disable() {
 }
 func (dr *DumpRecorder) Close() {
 	dr.Disable()
+  close(dr.stopLoggingSize)
 	switch dst := dr.dst.(type) {
   case *os.File:
     dst.Close()
@@ -372,4 +401,7 @@ func (dr *DumpRecorder) DumpFile() (*os.File, bool) {
 }
 func (dr *DumpRecorder) Size() uint64 {
   return dr.size
+}
+func (dr *DumpRecorder) LogPrefixed() string {
+  return "[DumpRecorder]"
 }
