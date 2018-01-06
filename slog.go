@@ -1,17 +1,17 @@
 package slog
 
 import (
-	"fmt"
-	"log"
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"os"
 	"reflect"
 	"runtime"
-	"os"
 	"time"
-	"encoding/binary"
-	"errors"
-	"io"
-	"bytes"
 )
 
 type now func() time.Time
@@ -27,7 +27,7 @@ var datestr string
 var bytesRecorder *DumpRecorder
 
 func SetBenchOutput(w io.Writer) {
-  benchWriter = w
+	benchWriter = w
 }
 
 func SetLogOutput(w io.Writer) {
@@ -40,12 +40,12 @@ func SetDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecord
 }
 
 func SetChunkingDumpRecorder(sizeLoggingInterval time.Duration, chunkFilename string, chunker DumpChunker) (*DumpRecorder, error) {
-  var err error
-  bytesRecorder, err = NewChunkingDumpRecorder(sizeLoggingInterval, chunkFilename, chunker)
-  if err != nil {
-    return nil, err
-  }
-  return bytesRecorder, nil
+	var err error
+	bytesRecorder, err = NewChunkingDumpRecorder(sizeLoggingInterval, chunkFilename, chunker)
+	if err != nil {
+		return nil, err
+	}
+	return bytesRecorder, nil
 }
 
 //func nowDateString() string {
@@ -56,19 +56,19 @@ func SetChunkingDumpRecorder(sizeLoggingInterval time.Duration, chunkFilename st
 //}
 
 func SlogCreationTimeInString() string {
-  if datestr == "" {
-    benchtime := time.Now()
-    y, mon, d := benchtime.Date()
-    h, min, s := benchtime.Clock()
-    datestr = fmt.Sprintf("%02d%02d%02d-%02d%02d%02d", (y%100), mon, d, h, min, s)
-  }
-  return datestr
+	if datestr == "" {
+		benchtime := time.Now()
+		y, mon, d := benchtime.Date()
+		h, min, s := benchtime.Clock()
+		datestr = fmt.Sprintf("%02d%02d%02d-%02d%02d%02d", (y % 100), mon, d, h, min, s)
+	}
+	return datestr
 }
 
 func SetLogOutputAsFile(filename string) (*os.File, error) {
 	fullfilename := fmt.Sprintf("%s_%s.log", SlogCreationTimeInString(), filename)
 	// Set logfile
-	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	f, err := os.OpenFile(fullfilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +77,9 @@ func SetLogOutputAsFile(filename string) (*os.File, error) {
 }
 
 func SetBenchOutputAsFile(filename string) (*os.File, error) {
-	fullfilename := fmt.Sprintf("%s_%s.bch", SlogCreationTimeInString() , filename)
+	fullfilename := fmt.Sprintf("%s_%s.bch", SlogCreationTimeInString(), filename)
 	// Set logfile
-	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	f, err := os.OpenFile(fullfilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func SetBenchOutputAsFile(filename string) (*os.File, error) {
 func SetDumpRecorderAsFile(filename string, sizeLogginInterval time.Duration) (*DumpRecorder, error) {
 	fullfilename := fmt.Sprintf("%s_%s.dump", SlogCreationTimeInString(), filename)
 	// Set logfile
-	f, err := os.OpenFile(fullfilename, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	f, err := os.OpenFile(fullfilename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func logprefix(x interface{}) string {
 	case LogPrefixed:
 		return x.(LogPrefixed).LogPrefix()
 	default:
-		switch reflect.TypeOf(x).Kind(){
+		switch reflect.TypeOf(x).Kind() {
 		case reflect.Func:
 			return "[" + runtime.FuncForPC(reflect.ValueOf(x).Pointer()).Name() + "]"
 		case reflect.Struct:
@@ -134,7 +134,7 @@ func Logf(x interface{}, format string, v ...interface{}) {
 	if !logging {
 		return
 	}
-	log.Printf(logprefix(x) + " " + format, v...)
+	log.Printf(logprefix(x)+" "+format, v...)
 }
 
 func Logln(x interface{}, v ...interface{}) {
@@ -142,7 +142,7 @@ func Logln(x interface{}, v ...interface{}) {
 		return
 	}
 	if len(v) > 0 {
-		log.Println(append([]interface{}{logprefix(x)} , v...)...)
+		log.Println(append([]interface{}{logprefix(x)}, v...)...)
 	} else {
 		log.Println(logprefix(x))
 	}
@@ -150,7 +150,7 @@ func Logln(x interface{}, v ...interface{}) {
 }
 
 func Fatalf(x interface{}, format string, v ...interface{}) {
-	log.Fatalf(logprefix(x) + " " + format, v...)
+	log.Fatalf(logprefix(x)+" "+format, v...)
 }
 
 func Fatalln(x interface{}, v ...interface{}) {
@@ -163,25 +163,25 @@ func Fatalln(x interface{}, v ...interface{}) {
 
 func benchprefix(x interface{}) string {
 	now := benchclock()
-	y, mon ,d := now.Date()
+	y, mon, d := now.Date()
 	h, min, s := now.Clock()
-	return fmt.Sprintf("%4d/%02d/%02d %02d:%02d:%02d %s",y, mon, d, h, min, s, logprefix(x))
+	return fmt.Sprintf("%4d/%02d/%02d %02d:%02d:%02d %s", y, mon, d, h, min, s, logprefix(x))
 }
 
 func Benchf(x interface{}, format string, v ...interface{}) {
-	s := fmt.Sprintf(benchprefix(x) + " " + format, v...)
+	s := fmt.Sprintf(benchprefix(x)+" "+format, v...)
 	benchWriter.Write([]byte(s))
 	fmt.Printf(s)
 }
 
 func Benchln(x interface{}, v ...interface{}) {
 	if len(v) > 0 {
-		s := fmt.Sprintln(append([]interface{}{benchprefix(x)} , v...)...)
-    benchWriter.Write([]byte(s))
+		s := fmt.Sprintln(append([]interface{}{benchprefix(x)}, v...)...)
+		benchWriter.Write([]byte(s))
 		fmt.Printf(s)
 	} else {
 		s := benchprefix(x)
-    benchWriter.Write([]byte(s))
+		benchWriter.Write([]byte(s))
 		fmt.Printf(s)
 	}
 }
@@ -195,7 +195,7 @@ func Stringify(x interface{}) string {
 }
 
 func StringifyIndent(x interface{}, indent string) string {
-	marshaled, err := json.MarshalIndent(x, "" ,indent)
+	marshaled, err := json.MarshalIndent(x, "", indent)
 	if err == nil {
 		return fmt.Sprintf("%T: %s", x, marshaled)
 	}
@@ -203,17 +203,17 @@ func StringifyIndent(x interface{}, indent string) string {
 }
 
 func Record(bytes []byte) {
-  Logf("[SLOG]", "bytesRecorder is %v\n", bytesRecorder)
 	if bytesRecorder != nil {
 		bytesRecorder.Record(bytes)
 	}
 }
 
 type Dump struct {
-	seq			int64		// 1
-	timestamp 	time.Time 	// 2
-	bytes 		[]byte		// 3
+	seq       int64     // 1
+	timestamp time.Time // 2
+	bytes     []byte    // 3
 }
+
 func DumpReader(src *os.File) (io.Reader, error) {
 	//return src, nil
 	ch, err := DumpChannel(src)
@@ -241,39 +241,39 @@ func DumpChannel(src *os.File) (chan []byte, error) {
 	bufsize := len(buf)
 
 	deserializeRecord := func() *Dump {
-		decodeInt := func () int32{
-			if err != nil{
+		decodeInt := func() int32 {
+			if err != nil {
 				return 0
 			}
-			if off+4 > bufsize{
+			if off+4 > bufsize {
 				err = errors.New("DecodeInt")
 				return 0
 			}
-			x := binary.LittleEndian.Uint32(buf[off: off+4])
+			x := binary.LittleEndian.Uint32(buf[off : off+4])
 			off += 4
 			return int32(x)
 		}
-		decodeLong := func () int64{
-			if err != nil{
+		decodeLong := func() int64 {
+			if err != nil {
 				return 0
 			}
-			if off+8 > bufsize{
+			if off+8 > bufsize {
 				err = errors.New("DecodeLong")
 				return 0
 			}
-			x := int64(binary.LittleEndian.Uint64(buf[off: off+8]))
+			x := int64(binary.LittleEndian.Uint64(buf[off : off+8]))
 			off += 8
 			return x
 		}
 
-		decodeDump := func (size int) []byte{
-			if err != nil{
+		decodeDump := func(size int) []byte {
+			if err != nil {
 				return nil
 			}
 			if size < 1 {
 				return nil
 			}
-			if off+size > bufsize{
+			if off+size > bufsize {
 				err = errors.New("DecodeDump")
 				return nil
 			}
@@ -317,8 +317,8 @@ func DumpChannel(src *os.File) (chan []byte, error) {
 }
 
 type DumpChunker struct {
-  UnitInKB  uint32
-  Callback  DumpChunkingCallback
+	UnitInKB uint32
+	Callback DumpChunkingCallback
 }
 type DumpChunkingCallback func(chunkFilename string)
 
@@ -326,32 +326,33 @@ type DumpRecorder struct {
 	dst             io.Writer
 	seq             int64
 	recording       bool
-  chunker         DumpChunker
-  chunking        bool
+	chunker         DumpChunker
+	chunking        bool
 	chunkNum        uint
-  chunkSize       uint64
+	chunkSize       uint64
 	chunkFilename   string
 	stopLoggingSize chan struct{}
 }
+
 func chunkedNumber(n uint64) string {
-  str := fmt.Sprintf("%d", n)
-  offset := len(str)%3
-  chunked := str[0:offset]
-  for ; offset < len(str); offset = offset + 3 {
-    chunked = chunked + "," + str[offset:offset+3]
-  }
-  return chunked
+	str := fmt.Sprintf("%d", n)
+	offset := len(str) % 3
+	chunked := str[0:offset]
+	for ; offset < len(str); offset = offset + 3 {
+		chunked = chunked + "," + str[offset:offset+3]
+	}
+	return chunked
 }
 func NewChunkingDumpRecorder(sizeLoggingInterval time.Duration, chunkFilename string, chunker DumpChunker) (*DumpRecorder, error) {
-  f, err := os.OpenFile(chunkFilename + ".0", os.O_CREATE | os.O_WRONLY, 0666)
-  if err != nil {
-    return nil, fmt.Errorf("cannot open chunk file:", err)
-  }
-  dr := NewDumpRecorder(f, sizeLoggingInterval)
-  dr.chunking = true
-  dr.chunker = chunker
-  dr.chunkFilename = chunkFilename
-  return dr, nil
+	f, err := os.OpenFile(chunkFilename+".0", os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return nil, fmt.Errorf("cannot open chunk file:", err)
+	}
+	dr := NewDumpRecorder(f, sizeLoggingInterval)
+	dr.chunking = true
+	dr.chunker = chunker
+	dr.chunkFilename = chunkFilename
+	return dr, nil
 }
 func NewDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecorder {
 	br := new(DumpRecorder)
@@ -360,27 +361,28 @@ func NewDumpRecorder(w io.Writer, sizeLoggingInterval time.Duration) *DumpRecord
 	br.stopLoggingSize = make(chan struct{})
 
 	if sizeLoggingInterval != 0 {
-    go func() {
-      sizeLogPrefix := ""
-      if f, ok := br.dst.(*os.File); ok {
-        sizeLogPrefix = "Dump file, " + f.Name() + ", "
-      }
-      for {
-        select {
-        case <-br.stopLoggingSize:
-          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.chunkSize))
-          return
-        case <-time.After(sizeLoggingInterval):
-          Logf(br, "%ssize: %s B\n", sizeLogPrefix, chunkedNumber(br.chunkSize))
-        }
-      }
-    }()
-  }
+		sizeLogPrefix := func() string {
+			if f, ok := br.dst.(*os.File); ok {
+				return fmt.Sprintf("Dump file, %s, ", f.Name())
+			}
+			return ""
+		}
+		go func() {
+			for {
+				select {
+				case <-br.stopLoggingSize:
+					Logf(br, "%ssize: %s B\n", sizeLogPrefix(), chunkedNumber(br.chunkSize))
+					return
+				case <-time.After(sizeLoggingInterval):
+					Logf(br, "%ssize: %s B\n", sizeLogPrefix(), chunkedNumber(br.chunkSize))
+				}
+			}
+		}()
+	}
 	return br
 }
 func (dr *DumpRecorder) Record(bytes []byte) {
-  Logf("[SLOG]", "is recording? %v\n", dr.recording)
-	if (dr.recording) {
+	if dr.recording {
 		r := new(Dump)
 		r.timestamp = time.Now()
 		r.seq = dr.seq
@@ -396,30 +398,29 @@ func (dr *DumpRecorder) Record(bytes []byte) {
 			buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0)
 			binary.LittleEndian.PutUint64(buf[len(buf)-8:], uint64(l))
 		}
-		encodeLong(r.seq)							// seq
-		encodeLong(int64(r.timestamp.UnixNano()))	// timestamp
-		encodeInt(int32(len(r.bytes)))				// bytes size
-		buf = append(buf, r.bytes...)				// bytes
+		encodeLong(r.seq)                         // seq
+		encodeLong(int64(r.timestamp.UnixNano())) // timestamp
+		encodeInt(int32(len(r.bytes)))            // bytes size
+		buf = append(buf, r.bytes...)             // bytes
 		if dr.chunking {
-      appendedChunkSize :=  dr.chunkSize + uint64(len(buf))
-      if appendedChunkSize > uint64(dr.chunker.UnitInKB) * 1024 {
-        dr.dst.(*os.File).Close()
-        go dr.chunker.Callback(fmt.Sprintf("%s.%d", dr.chunkFilename, dr.chunkNum))
-        dr.chunkNum = dr.chunkNum + 1
-        newChunkFilename := fmt.Sprintf("%s.%d", dr.chunkFilename, dr.chunkNum)
-        newChunkfile, err := os.OpenFile(newChunkFilename, os.O_CREATE | os.O_WRONLY, 0666)
-        if err != nil {
-          Logf("Failed to open new chunkfile, %s: %s", newChunkFilename, err)
-          dr.Close()
-        }
-        dr.dst = newChunkfile
-        dr.chunkSize = 0
-      }
-    }
-    dr.chunkSize += uint64(len(buf))
+			appendedChunkSize := dr.chunkSize + uint64(len(buf))
+			if appendedChunkSize > uint64(dr.chunker.UnitInKB)*1024 {
+				dr.dst.(*os.File).Close()
+				go dr.chunker.Callback(fmt.Sprintf("%s.%d", dr.chunkFilename, dr.chunkNum))
+				dr.chunkNum = dr.chunkNum + 1
+				newChunkFilename := fmt.Sprintf("%s.%d", dr.chunkFilename, dr.chunkNum)
+				newChunkfile, err := os.OpenFile(newChunkFilename, os.O_CREATE|os.O_WRONLY, 0666)
+				if err != nil {
+					Logf("Failed to open new chunkfile, %s: %s", newChunkFilename, err)
+					dr.Close()
+				}
+				dr.dst = newChunkfile
+				dr.chunkSize = 0
+			}
+		}
+		dr.chunkSize += uint64(len(buf))
 
 		// write to file
-		Logf("[SLOG]", "write bytes(size: %d) to dump(%v)\n", len(buf), dr.dst)
 		dr.dst.Write(buf)
 		dr.seq++
 	}
@@ -433,20 +434,20 @@ func (dr *DumpRecorder) Disable() {
 }
 func (dr *DumpRecorder) Close() {
 	dr.Disable()
-  close(dr.stopLoggingSize)
+	close(dr.stopLoggingSize)
 	switch dst := dr.dst.(type) {
-  case *os.File:
-    dst.Close()
-  }
+	case *os.File:
+		dst.Close()
+	}
 }
 func (dr *DumpRecorder) DumpFile() (*os.File, bool) {
 	switch f := dr.dst.(type) {
-		case *os.File:
-			return f, true
-		default:
-			return nil, false
+	case *os.File:
+		return f, true
+	default:
+		return nil, false
 	}
 }
-func (dr *DumpRecorder) LogPrefixed() string {
-  return "[DumpRecorder]"
+func (dr *DumpRecorder) LogPrefix() string {
+	return "[DumpRecorder]"
 }
